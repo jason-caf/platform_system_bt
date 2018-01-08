@@ -325,6 +325,9 @@ static void bta_av_save_addr(tBTA_AV_SCB* p_scb, const RawAddress& b) {
     p_scb->suspend_sup = true;
   }
 
+  std::string addrstr = b.ToString();
+  const char* bd_addr_str = addrstr.c_str();
+  APPL_TRACE_DEBUG("%s: b[%s]", __func__, bd_addr_str);
   /* do this copy anyway, just in case the first addr matches
    * the control block one by accident */
   p_scb->peer_addr = b;
@@ -614,6 +617,7 @@ static void bta_av_proc_stream_evt(uint8_t handle, const RawAddress* bd_addr,
     if (event == AVDT_SUSPEND_CFM_EVT) p_msg->initiator = true;
 
     APPL_TRACE_VERBOSE("%s: hndl:x%x", __func__, p_scb->hndl);
+    VLOG(1) << __func__ << "p_msg->bd_addr:" << bd_addr;
     p_msg->hdr.layer_specific = p_scb->hndl;
     p_msg->handle = handle;
     p_msg->avdt_event = event;
@@ -857,14 +861,22 @@ void bta_av_switch_role(tBTA_AV_SCB* p_scb, UNUSED_ATTR tBTA_AV_DATA* p_data) {
   if (p_scb->q_tag == BTA_AV_Q_TAG_OPEN) {
     if (bta_av_switch_if_needed(p_scb) ||
         !bta_av_link_role_ok(p_scb, A2DP_SET_MULTL_BIT)) {
+      APPL_TRACE_DEBUG("%s: Role switch request in progress", __func__);
       p_scb->wait |= BTA_AV_WAIT_ROLE_SW_RES_OPEN;
     } else {
       /* this should not happen in theory. Just in case...
        * continue to do_disc_a2dp */
-      switch_res = BTA_AV_RS_DONE;
+
+       if(!p_scb->num_disc_snks) {
+          /* Only there is no discovered sink list, then do discovery */
+          APPL_TRACE_DEBUG("%s: continue discovery request(hndl:0x%x)",
+                             __func__, p_scb->hndl);
+          switch_res = BTA_AV_RS_DONE;
+        }
     }
   } else {
     /* report failure on OPEN */
+    APPL_TRACE_DEBUG("%s: Role switch request failed", __func__);
     switch_res = BTA_AV_RS_FAIL;
   }
 
@@ -872,6 +884,7 @@ void bta_av_switch_role(tBTA_AV_SCB* p_scb, UNUSED_ATTR tBTA_AV_DATA* p_data) {
     if (bta_av_cb.rs_idx == (p_scb->hdi + 1)) {
       bta_av_cb.rs_idx = 0;
     }
+    APPL_TRACE_DEBUG("%s: Role switch request to be retried", __func__);
     p_scb->wait &= ~BTA_AV_WAIT_ROLE_SW_RETRY;
     p_scb->q_tag = 0;
     p_buf->switch_res = switch_res;
@@ -1028,6 +1041,7 @@ void bta_av_do_disc_a2dp(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
                sizeof(tBTA_AV_API_OPEN));
         p_scb->wait |= BTA_AV_WAIT_ROLE_SW_RES_OPEN;
         p_scb->q_tag = BTA_AV_Q_TAG_OPEN;
+        APPL_TRACE_DEBUG("%s: AV Role switch triggered", __func__);
       } else {
         ok_continue = true;
       }
@@ -1047,6 +1061,7 @@ void bta_av_do_disc_a2dp(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
       if (bta_av_link_role_ok(p_scb, A2DP_SET_MULTL_BIT)) {
         ok_continue = true;
       } else {
+        APPL_TRACE_DEBUG("%s: Role not proper yet, wait", __func__);
         p_scb->wait |= BTA_AV_WAIT_ROLE_SW_RES_OPEN;
       }
       break;
@@ -1072,13 +1087,15 @@ void bta_av_do_disc_a2dp(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
           ((bta_av_cb.conn_audio & mask) || /* connected audio */
           (bta_av_cb.conn_video & mask))) {  /* connected video */
           BTM_GetRole(p_scbi->peer_addr, &role);
+          APPL_TRACE_DEBUG("%s:Current role for idx %d is %d",__func__, p_scb->hdi, role);
           if (BTM_ROLE_MASTER != role) {
             if (!interop_database_match_addr(INTEROP_DISABLE_ROLE_SWITCH,
                                           &p_scbi->peer_addr)) {
+              APPL_TRACE_DEBUG("%s:RS disabled, returning",__func__);
               return;
             }else {
-              APPL_TRACE_DEBUG("%s:other connected remote is blacklisted for RS",__func__);
-              APPL_TRACE_DEBUG("%s:RS is not possible, continue avdtp signaling",__func__);
+              APPL_TRACE_DEBUG("%s: Other connected remote is blacklisted for RS",__func__);
+              APPL_TRACE_DEBUG("%s: RS is not possible, continue avdtp signaling",__func__);
             }
           }
         }
@@ -1093,6 +1110,7 @@ void bta_av_do_disc_a2dp(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
   p_scb->wait &= ~BTA_AV_WAIT_ROLE_SW_BITS;
 
   if (p_scb->wait & BTA_AV_WAIT_CHECK_RC) {
+    APPL_TRACE_DEBUG("%s: Start RC Timer, wait:x%x",__func__, p_scb->wait);
     p_scb->wait &= ~BTA_AV_WAIT_CHECK_RC;
     bta_sys_start_timer(p_scb->avrc_ct_timer, BTA_AV_RC_DISC_TIME_VAL,
                         BTA_AV_AVRC_TIMER_EVT, p_scb->hndl);
@@ -1438,33 +1456,30 @@ void bta_av_setconfig_rsp(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
     else
       p_scb->avdt_version = AVDT_VERSION;
 
-    if (A2DP_GetCodecType(p_scb->cfg.codec_info) == A2DP_MEDIA_CT_SBC ||
-        num > 1) {
     /* For any codec used by the SNK as INT, discover req is not sent in bta_av_config_ind.
      * This is done since we saw an IOT issue with APTX codec. Thus, we now take same
      * path for all codecs as for SBC. call disc_res now */
     /* this is called in A2DP SRC path only, In case of SINK we don't need it  */
-      if (local_sep == AVDT_TSEP_SRC)
-        p_scb->p_cos->disc_res(p_scb->hndl, num, num, 0, p_scb->peer_addr,
-                               UUID_SERVCLASS_AUDIO_SOURCE);
+    if (local_sep == AVDT_TSEP_SRC)
+      p_scb->p_cos->disc_res(p_scb->hndl, num, num, 0, p_scb->peer_addr,
+                             UUID_SERVCLASS_AUDIO_SOURCE);
 
-          for (i = 1; i < num; i++) {
-              APPL_TRACE_DEBUG("%s: sep_info[%d] SEID: %d", __func__, i, p_seid[i - 1]);
-              /* initialize the sep_info[] to get capabilities */
-              p_scb->sep_info[i].in_use = false;
-              p_scb->sep_info[i].tsep = AVDT_TSEP_SNK;
-              p_scb->sep_info[i].media_type = p_scb->media_type;
-              p_scb->sep_info[i].seid = p_seid[i - 1];
-          }
+    for (i = 1; i < num; i++) {
+      APPL_TRACE_DEBUG("%s: sep_info[%d] SEID: %d", __func__, i, p_seid[i - 1]);
+      /* initialize the sep_info[] to get capabilities */
+      p_scb->sep_info[i].in_use = false;
+      p_scb->sep_info[i].tsep = AVDT_TSEP_SNK;
+      p_scb->sep_info[i].media_type = p_scb->media_type;
+      p_scb->sep_info[i].seid = p_seid[i - 1];
+    }
 
-          /* only in case of local sep as SRC we need to look for other SEPs, In case
-           * of SINK we don't */
-          if (local_sep == AVDT_TSEP_SRC) {
-              /* Make sure UUID has been initialized... */
-              if (p_scb->uuid_int == 0) p_scb->uuid_int = UUID_SERVCLASS_AUDIO_SOURCE;
-                  bta_av_next_getcap(p_scb, p_data);
-          }
-      }
+    /* only in case of local sep as SRC we need to look for other SEPs, In case
+     * of SINK we don't */
+    if (local_sep == AVDT_TSEP_SRC) {
+      /* Make sure UUID has been initialized... */
+      if (p_scb->uuid_int == 0) p_scb->uuid_int = UUID_SERVCLASS_AUDIO_SOURCE;
+        bta_av_next_getcap(p_scb, p_data);
+    }
   }
 }
 
@@ -3635,6 +3650,9 @@ void bta_av_offload_req(tBTA_AV_SCB* p_scb, tBTA_AV_DATA* p_data) {
       APPL_TRACE_IMP("Restricting streaming MTU size for MQ Bitpool");
       mtu = MAX_2MBPS_AVDTP_MTU;
     }
+
+    mtu = mtu + AVDT_MEDIA_HDR_SIZE;
+    APPL_TRACE_DEBUG("%s Adding AVDTP media Header in stream_mtu : %d", __func__, mtu);
 
     if (mtu > BTA_AV_MAX_A2DP_MTU)
         mtu = BTA_AV_MAX_A2DP_MTU;
