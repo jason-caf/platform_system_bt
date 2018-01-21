@@ -75,6 +75,7 @@ static int32_t packet_counter;
 static bool sock_snoop_active = false;
 
 extern bt_logger_interface_t *logger_interface;
+static long int gmt_offset;
 
 // TODO(zachoverflow): merge btsnoop and btsnoop_net together
 void btsnoop_net_open();
@@ -94,6 +95,11 @@ static void btsnoop_write_packet(packet_type_t type, uint8_t* packet,
 
 static future_t* start_up(void) {
   std::lock_guard<std::mutex> lock(btsnoop_mutex);
+  time_t t = time(NULL);
+  struct tm tm_cur;
+
+  localtime_r (&t, &tm_cur);
+  gmt_offset = tm_cur.tm_gmtoff;
 
   if (!is_btsnoop_enabled()) {
     delete_btsnoop_files();
@@ -140,6 +146,7 @@ static void capture(const BT_HDR* buffer, bool is_received) {
 
   std::lock_guard<std::mutex> lock(btsnoop_mutex);
   uint64_t timestamp_us = time_gettimeofday_us();
+  timestamp_us += gmt_offset*1000000;
   btsnoop_mem_capture(buffer, timestamp_us);
 
   if (logfile_fd == INVALID_FD) return;
