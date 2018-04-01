@@ -1612,7 +1612,7 @@ static bool btif_av_state_started_handler(btif_sm_event_t event, void* p_data,
                                           int index) {
   tBTA_AV* p_av = (tBTA_AV*)p_data;
   RawAddress *bt_addr = nullptr;
-
+  RawAddress playing_address = RawAddress::kEmpty;
   btif_sm_state_t state = BTIF_AV_STATE_IDLE;
   int i;
   bool hal_suspend_pending = false;
@@ -1624,6 +1624,13 @@ static bool btif_av_state_started_handler(btif_sm_event_t event, void* p_data,
 
   switch (event) {
     case BTIF_SM_ENTER_EVT:
+      btif_rc_get_playing_device(&playing_address);
+      if (!playing_address.IsEmpty() &&
+          (playing_address == btif_av_cb[index].peer_bda) &&
+          (btif_av_cb[index].flags == BTIF_AV_FLAG_PENDING_START)) {
+          BTIF_TRACE_IMP("%s Clear play process flag",__func__);
+          btif_rc_clear_playing_state(false);
+      }
       /* Ack from entry point of started handler instead of open state to avoid
        * race condition
        */
