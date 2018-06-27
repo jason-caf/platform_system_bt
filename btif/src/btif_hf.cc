@@ -1483,6 +1483,8 @@ static bt_status_t phone_state_change(int num_active, int num_held,
 
     BTIF_TRACE_DEBUG("%s: Moving the audio_state to CONNECTING", __FUNCTION__);
     btif_hf_cb[idx].audio_state = BTHF_AUDIO_STATE_CONNECTING;
+    btif_transfer_context(btif_in_hf_generic_evt, BTIF_HFP_CB_AUDIO_CONNECTING,
+                          (char*)(&btif_hf_cb[idx].connected_bda), sizeof(RawAddress), NULL);
     /* Addition call setup with the Active call
     ** CIND response should have been updated.
     ** just open SCO connection.
@@ -1512,6 +1514,8 @@ static bt_status_t phone_state_change(int num_active, int num_held,
               BTIF_TRACE_DEBUG("%s: Moving the audio_state to CONNECTING",
                       __FUNCTION__);
               btif_hf_cb[idx].audio_state = BTHF_AUDIO_STATE_CONNECTING;
+              btif_transfer_context(btif_in_hf_generic_evt, BTIF_HFP_CB_AUDIO_CONNECTING,
+                                 (char*)(&btif_hf_cb[idx].connected_bda), sizeof(RawAddress), NULL);
             } else if (num_held > btif_hf_cb[idx].num_held)
               res = BTA_AG_IN_CALL_HELD_RES;
             else
@@ -1558,6 +1562,8 @@ static bt_status_t phone_state_change(int num_active, int num_held,
 
           BTIF_TRACE_DEBUG("%s: Moving the audio_state to CONNECTING", __FUNCTION__);
           btif_hf_cb[idx].audio_state = BTHF_AUDIO_STATE_CONNECTING;
+          btif_transfer_context(btif_in_hf_generic_evt, BTIF_HFP_CB_AUDIO_CONNECTING,
+                                 (char*)(&btif_hf_cb[idx].connected_bda), sizeof(RawAddress), NULL);
         }
         else
         {
@@ -1575,6 +1581,8 @@ static bt_status_t phone_state_change(int num_active, int num_held,
 
           BTIF_TRACE_DEBUG("%s: Moving the audio_state to CONNECTING", __FUNCTION__);
           btif_hf_cb[idx].audio_state = BTHF_AUDIO_STATE_CONNECTING;
+          btif_transfer_context(btif_in_hf_generic_evt, BTIF_HFP_CB_AUDIO_CONNECTING,
+                                 (char*)(&btif_hf_cb[idx].connected_bda), sizeof(RawAddress), NULL);
         }
         else
         {
